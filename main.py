@@ -27,7 +27,7 @@ threading.Thread(target=run_health_check_server, daemon=True).start()
 # ==========================================
 # 2. BOT INITIALIZATION
 # ==========================================
-BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8936396715:AAF1iw4oIeGn3DwoY9znSkovrOZkq-X5sQo")
 bot = telebot.TeleBot(BOT_TOKEN)
 
 user_links = {}
@@ -119,7 +119,6 @@ def callback_listener(call):
 def process_terabox(chat_id, url, action, status_msg):
     surl = extract_terabox_id(url)
     
-    # List of fallback APIs for TeraBox
     api_endpoints = [
         f"https://terabox-dl.qtcloud.workers.dev/api/get-info?shorturl={surl}",
         f"https://terabox.hnn.workers.dev/api/get-info?shorturl={surl}",
@@ -188,12 +187,10 @@ def process_terabox(chat_id, url, action, status_msg):
 # 5. GENERAL MEDIA ENGINE (COBALT + YT-DLP FALLBACK)
 # ==========================================
 def process_general_media(chat_id, url, action, status_msg):
-    # Try Method A: Cobalt API Engine
     success = download_via_cobalt(chat_id, url, action, status_msg)
     if success:
         return
 
-    # Try Method B: YT-DLP Engine with Mobile Emulation
     download_via_ytdlp(chat_id, url, action, status_msg)
 
 def download_via_cobalt(chat_id, url, action, status_msg):
@@ -245,7 +242,7 @@ def download_via_ytdlp(chat_id, url, action, status_msg):
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
-        'max_filesize': 50 * 1024 * 1024, # 50MB Limit
+        'max_filesize': 50 * 1024 * 1024,
         'extractor_args': {
             'youtube': {
                 'player_client': ['ios', 'android', 'mweb']
@@ -256,7 +253,6 @@ def download_via_ytdlp(chat_id, url, action, status_msg):
         }
     }
 
-    # Write cookies if available in environment variables
     yt_cookies = os.getenv("YT_COOKIES")
     if yt_cookies:
         cookies_file = f"cookies_{chat_id}.txt"
@@ -300,7 +296,6 @@ def download_via_ytdlp(chat_id, url, action, status_msg):
             else:
                 bot.send_audio(chat_id, file_data, caption=f"🎵 *{info.get('title', 'Media Audio')}*", parse_mode="Markdown")
 
-        # Cleanup files
         if os.path.exists(filename):
             os.remove(filename)
         if yt_cookies and os.path.exists(cookies_file):
@@ -317,7 +312,7 @@ def download_via_ytdlp(chat_id, url, action, status_msg):
         )
 
 # ==========================================
-# 6. SAFE BOT POLLING STARTUP (PREVENTS ERROR 409)
+# 6. SAFE BOT POLLING STARTUP
 # ==========================================
 if __name__ == "__main__":
     try:
