@@ -19,11 +19,11 @@ def run_health_check_server():
     server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
     server.serve_forever()
 
-# Start Web Server in Background Thread
+# Background Thread for Port Binding
 threading.Thread(target=run_health_check_server, daemon=True).start()
 
-# Telegram Bot Token
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8700725972:AAGMiWJuCTubp5I1OUzcDhv2WW9NyGAb19o")
+# New Bot Token Integration
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8936396715:AAF1iw4oIeGn3DwoY9znSkovrOZkq-X5sQo")
 bot = telebot.TeleBot(BOT_TOKEN)
 
 user_links = {}
@@ -105,7 +105,8 @@ def download_terabox(chat_id, url, action, status_msg):
             with open(file_name, "rb") as audio:
                 bot.send_audio(chat_id, audio, caption="✅ TeraBox Audio Extracted!")
         
-        os.remove(file_name)
+        if os.path.exists(file_name):
+            os.remove(file_name)
         bot.delete_message(chat_id, status_msg.message_id)
     else:
         bot.edit_message_text("❌ TeraBox link bypass nahi ho paaya. File private ho sakti hai.", chat_id=chat_id, message_id=status_msg.message_id)
@@ -149,5 +150,10 @@ def download_general_ytdlp(chat_id, url, action, status_msg):
         os.remove(filename)
     bot.delete_message(chat_id, status_msg.message_id)
 
-# Start Bot Polling
+# Auto Webhook Reset and Polling Start
+try:
+    bot.remove_webhook()
+except Exception:
+    pass
+
 bot.polling(non_stop=True)
