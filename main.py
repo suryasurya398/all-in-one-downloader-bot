@@ -1,5 +1,6 @@
 import os
 import re
+import time
 import requests
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -19,10 +20,10 @@ def run_health_check_server():
     server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
     server.serve_forever()
 
-# Background Thread for Port Binding
+# Start Web Server in Background Thread
 threading.Thread(target=run_health_check_server, daemon=True).start()
 
-# New Bot Token Integration
+# Bot Token Setup
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8936396715:AAF1iw4oIeGn3DwoY9znSkovrOZkq-X5sQo")
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -35,13 +36,13 @@ def is_terabox(url):
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     welcome_text = (
-        "👋 *All-in-One Downloader Bot*\n\n"
-        "Mujhe koi bhi link bhejo:\n"
-        "🔹 TeraBox (All links)\n"
-        "🔹 YouTube Shorts/Videos\n"
+        "👋 *Welcome to All-in-One Downloader Bot*\n\n"
+        "Send me any link from:\n"
+        "🔹 TeraBox (All domains)\n"
+        "🔹 YouTube Shorts / Videos\n"
         "🔹 Instagram Reels\n"
         "🔹 Pinterest Videos\n\n"
-        "Link bhejte hi Video aur MP3 Audio dono ka option milega!"
+        "Choose between Video (MP4) and Audio (MP3) formats!"
     )
     bot.reply_to(message, welcome_text, parse_mode="Markdown")
 
@@ -50,7 +51,7 @@ def handle_message(message):
     url = message.text.strip()
     
     if not (url.startswith("http://") or url.startswith("https://")):
-        bot.reply_to(message, "❌ Kripya valid video ya TeraBox link bhejein.")
+        bot.reply_to(message, "❌ Please send a valid media link.")
         return
 
     msg_id = message.message_id
@@ -61,28 +62,28 @@ def handle_message(message):
     btn_audio = InlineKeyboardButton("🎵 Audio (MP3)", callback_data=f"aud_{msg_id}")
     markup.add(btn_video, btn_audio)
 
-    bot.reply_to(message, "⚙️ *Select Format:* Download kis format me karna chahte hain?", reply_markup=markup, parse_mode="Markdown")
+    bot.reply_to(message, "⚙️ *Select Format:* Please choose your download option:", reply_markup=markup, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_listener(call):
-    action, msg_id = call.data.split("_")
-    msg_id = int(msg_id)
-    url = user_links.get(msg_id)
-
-    if not url:
-        bot.answer_callback_query(call.id, "❌ Link expire ho chuka hai, dubara link bhejein.")
-        return
-
-    bot.answer_callback_query(call.id, "⏳ Processing start ho gayi hai...")
-    status_msg = bot.send_message(call.message.chat.id, "⏳ *File process ho rahi hai, kripya wait karein...*", parse_mode="Markdown")
-
     try:
+        action, msg_id = call.data.split("_")
+        msg_id = int(msg_id)
+        url = user_links.get(msg_id)
+
+        if not url:
+            bot.answer_callback_query(call.id, "❌ Link expired. Please send the link again.")
+            return
+
+        bot.answer_callback_query(call.id, "⏳ Processing started...")
+        status_msg = bot.send_message(call.message.chat.id, "⏳ *Processing your request, please wait...*", parse_mode="Markdown")
+
         if is_terabox(url):
             download_terabox(call.message.chat.id, url, action, status_msg)
         else:
             download_general_ytdlp(call.message.chat.id, url, action, status_msg)
     except Exception as e:
-        bot.edit_message_text(f"❌ Error aayi: {str(e)[:200]}", chat_id=call.message.chat.id, message_id=status_msg.message_id)
+        bot.send_message(call.message.chat.id, f"❌ Error: {str(e)[:200]}")
 
 def download_terabox(chat_id, url, action, status_msg):
     api_url = f"https://terabox-dl.qtcloud.workers.dev/api/get-info?shorturl={url.split('/')[-1]}"
@@ -100,28 +101,42 @@ def download_terabox(chat_id, url, action, status_msg):
 
         if action == "vid":
             with open(file_name, "rb") as video:
-                bot.send_video(chat_id, video, caption="✅ TeraBox Video Downloaded!")
+                bot.send_video(chat_id, video, caption="✅ *TeraBox Video Downloaded!*", parse_mode="Markdown")
         else:
             with open(file_name, "rb") as audio:
-                bot.send_audio(chat_id, audio, caption="✅ TeraBox Audio Extracted!")
+                bot.send_audio(chat_id, audio, caption="✅ *TeraBox Audio Extracted!*", parse_mode="Markdown")
         
         if os.path.exists(file_name):
             os.remove(file_name)
         bot.delete_message(chat_id, status_msg.message_id)
     else:
-        bot.edit_message_text("❌ TeraBox link bypass nahi ho paaya. File private ho sakti hai.", chat_id=chat_id, message_id=status_msg.message_id)
+        bot.edit_message_text("❌ Unable to bypass TeraBox link. File may be private.", chat_id=chat_id, message_id=status_msg.message_id)
 
 def download_general_ytdlp(chat_id, url, action, status_msg):
-    out_file = f"download_{chat_id}"
+    out_file = f"download_{chat_id}_{int(time.time())}"
     
+    # Bypass YouTube Cloud Server IP Blockers
+    ydl_opts = {
+        'quiet': True,
+        'no_warnings': True,
+        'max_filesize': 50 * 1024 * 1024,
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['ios', 'android', 'mweb']
+            }
+        },
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1'
+        }
+    }
+
     if action == "vid":
-        ydl_opts = {
+        ydl_opts.update({
             'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
             'outtmpl': f'{out_file}.%(ext)s',
-            'max_filesize': 50 * 1024 * 1024
-        }
+        })
     else:
-        ydl_opts = {
+        ydl_opts.update({
             'format': 'bestaudio/best',
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
@@ -129,31 +144,35 @@ def download_general_ytdlp(chat_id, url, action, status_msg):
                 'preferredquality': '192',
             }],
             'outtmpl': f'{out_file}.%(ext)s',
-            'max_filesize': 50 * 1024 * 1024
-        }
+        })
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        filename = ydl.prepare_filename(info)
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            filename = ydl.prepare_filename(info)
 
-    if action == "vid":
-        with open(filename, "rb") as video:
-            bot.send_video(chat_id, video, caption=f"🎥 *{info.get('title', 'Video')}*", parse_mode="Markdown")
-    else:
-        mp3_filename = f"{out_file}.mp3"
-        if os.path.exists(mp3_filename):
-            filename = mp3_filename
-        with open(filename, "rb") as audio:
-            bot.send_audio(chat_id, audio, caption=f"🎵 *{info.get('title', 'Audio')}*", parse_mode="Markdown")
+        if action == "vid":
+            with open(filename, "rb") as video:
+                bot.send_video(chat_id, video, caption=f"🎥 *{info.get('title', 'Video')}*", parse_mode="Markdown")
+        else:
+            mp3_filename = f"{out_file}.mp3"
+            if os.path.exists(mp3_filename):
+                filename = mp3_filename
+            with open(filename, "rb") as audio:
+                bot.send_audio(chat_id, audio, caption=f"🎵 *{info.get('title', 'Audio')}*", parse_mode="Markdown")
 
-    if os.path.exists(filename):
-        os.remove(filename)
-    bot.delete_message(chat_id, status_msg.message_id)
+        if os.path.exists(filename):
+            os.remove(filename)
+        bot.delete_message(chat_id, status_msg.message_id)
 
-# Auto Webhook Reset and Polling Start
+    except Exception as e:
+        bot.edit_message_text(f"❌ Extraction failed: {str(e)[:150]}", chat_id=chat_id, message_id=status_msg.message_id)
+
+# Clear conflicting webhooks and start polling cleanly
 try:
-    bot.remove_webhook()
+    bot.remove_webhook(drop_pending_updates=True)
+    time.sleep(1)
 except Exception:
     pass
 
-bot.polling(non_stop=True)
+bot.infinity_polling(timeout=10, long_polling_timeout=5, skip_pending=True)
