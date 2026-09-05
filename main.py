@@ -1,18 +1,32 @@
 import os
 import re
 import requests
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import yt_dlp
 
+# Dummy Web Server to satisfy Render Port Binding
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is Live!")
+
+def run_health_check_server():
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+    server.serve_forever()
+
+# Start Web Server in Background Thread
+threading.Thread(target=run_health_check_server, daemon=True).start()
+
 # Telegram Bot Token
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8936396715:AAF1iw4oIeGn3DwoY9znSkovrOZkq-X5sQo")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8700725972:AAGMiWJuCTubp5I1OUzcDhv2WW9NyGAb19o")
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# Temporary Link Store
 user_links = {}
-
-# TeraBox Supported Domains Check
 TERABOX_DOMAINS = ["terabox", "1024tera", "teraboxapp", "freeterabox", "mirrobox", "nebulabox", "4funbox"]
 
 def is_terabox(url):
@@ -35,16 +49,13 @@ def send_welcome(message):
 def handle_message(message):
     url = message.text.strip()
     
-    # URL Validation
     if not (url.startswith("http://") or url.startswith("https://")):
         bot.reply_to(message, "❌ Kripya valid video ya TeraBox link bhejein.")
         return
 
-    # Store link against message ID
     msg_id = message.message_id
     user_links[msg_id] = url
 
-    # Inline Buttons Create Karein
     markup = InlineKeyboardMarkup()
     btn_video = InlineKeyboardButton("🎥 Video (MP4)", callback_data=f"vid_{msg_id}")
     btn_audio = InlineKeyboardButton("🎵 Audio (MP3)", callback_data=f"aud_{msg_id}")
@@ -62,7 +73,7 @@ def callback_listener(call):
         bot.answer_callback_query(call.id, "❌ Link expire ho chuka hai, dubara link bhejein.")
         return
 
-    bot.answer_callback_query(call.id, "⏳ Processing processing start ho gayi hai...")
+    bot.answer_callback_query(call.id, "⏳ Processing start ho gayi hai...")
     status_msg = bot.send_message(call.message.chat.id, "⏳ *File process ho rahi hai, kripya wait karein...*", parse_mode="Markdown")
 
     try:
@@ -74,7 +85,6 @@ def callback_listener(call):
         bot.edit_message_text(f"❌ Error aayi: {str(e)[:200]}", chat_id=call.message.chat.id, message_id=status_msg.message_id)
 
 def download_terabox(chat_id, url, action, status_msg):
-    # Free TeraBox API Bypass Logic
     api_url = f"https://terabox-dl.qtcloud.workers.dev/api/get-info?shorturl={url.split('/')[-1]}"
     res = requests.get(api_url).json()
 
@@ -107,7 +117,7 @@ def download_general_ytdlp(chat_id, url, action, status_msg):
         ydl_opts = {
             'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
             'outtmpl': f'{out_file}.%(ext)s',
-            'max_filesize': 50 * 1024 * 1024 # 50MB Limit for Telegram free bots
+            'max_filesize': 50 * 1024 * 1024
         }
     else:
         ydl_opts = {
@@ -139,5 +149,5 @@ def download_general_ytdlp(chat_id, url, action, status_msg):
         os.remove(filename)
     bot.delete_message(chat_id, status_msg.message_id)
 
-# Bot Run
+# Start Bot Polling
 bot.polling(non_stop=True)
